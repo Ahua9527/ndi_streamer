@@ -11,6 +11,13 @@
 
 #include "common.h"
 
+// 帧转换器模块，提供NDI视频/音频帧到FFmpeg AVFrame的转换功能
+
+/**
+ * 将NDI视频格式FourCC转换为FFmpeg像素格式
+ * @param type NDI视频格式FourCC枚举值
+ * @return 对应的FFmpeg像素格式，不支持的格式返回-1
+ */
 enum AVPixelFormat
 ndi_fourcc_to_ffmpeg(NDIlib_FourCC_video_type_e type)
 {
@@ -42,6 +49,11 @@ ndi_fourcc_to_ffmpeg(NDIlib_FourCC_video_type_e type)
     }
 }
 
+/**
+ * 创建新的帧转换器上下文
+ * @return 新分配的FrameConverterCtx指针，包含初始化的视频帧、音频帧和错误字符串缓冲区
+ * @note 需要调用free_frame_converter_ctx释放分配的资源
+ */
 FrameConverterCtx *
 new_frame_converter_ctx()
 {
@@ -55,6 +67,12 @@ new_frame_converter_ctx()
     return ctx;
 }
 
+/**
+ * 释放帧转换器上下文资源
+ * @param ctx 指向帧转换器上下文指针的指针
+ * @return 成功返回0
+ * @note 会释放所有分配的资源并将指针置为NULL
+ */
 int
 free_frame_converter_ctx(FrameConverterCtx **ctx)
 {
@@ -72,6 +90,11 @@ free_frame_converter_ctx(FrameConverterCtx **ctx)
     return 0;
 }
 
+/**
+ * 重置帧转换器上下文状态
+ * @param ctx 帧转换器上下文指针
+ * @note 重置帧索引和起始时间戳，用于重新开始计数
+ */
 void
 fc_reset(FrameConverterCtx *ctx)
 {
@@ -79,6 +102,21 @@ fc_reset(FrameConverterCtx *ctx)
     ctx->start_ts = get_current_ts_usec();
 }
 
+/**
+ * 将NDI视频帧转换为FFmpeg AVFrame
+ * @param ctx 帧转换器上下文
+ * @param codec_ctx FFmpeg编解码器上下文
+ * @param in_frame 输入的NDI视频帧
+ * @return 转换后的AVFrame指针，失败返回NULL
+ * @note 执行以下操作:
+ * 1. 准备可写的输出帧
+ * 2. 设置帧格式和尺寸
+ * 3. 获取图像缓冲区
+ * 4. 创建/获取图像缩放上下文
+ * 5. 填充源图像参数
+ * 6. 执行图像格式转换
+ * 7. 设置时间戳和帧索引
+ */
 AVFrame *
 fc_ndi_video_frame_to_avframe(FrameConverterCtx *ctx, AVCodecContext *codec_ctx,
                               NDIlib_video_frame_v2_t *in_frame)
@@ -120,6 +158,24 @@ fc_ndi_video_frame_to_avframe(FrameConverterCtx *ctx, AVCodecContext *codec_ctx,
     return out_frame;
 }
 
+/**
+ * 将NDI音频帧转换为FFmpeg AVFrame
+ * @param ctx 帧转换器上下文
+ * @param codec_ctx FFmpeg编解码器上下文
+ * @param in_frame 输入的NDI音频帧
+ * @return 转换后的AVFrame指针，失败返回NULL
+ * @note 执行以下操作:
+ * 1. 检查剩余样本数
+ * 2. 准备可写的输出帧
+ * 3. 设置音频参数(采样数、格式、采样率、声道布局)
+ * 4. 获取音频缓冲区
+ * 5. 处理刷新情况(无输入帧)
+ * 6. 设置重采样参数
+ * 7. 初始化重采样上下文
+ * 8. 填充音频数据
+ * 9. 执行重采样
+ * 10. 设置时间戳
+ */
 AVFrame *
 fc_ndi_audio_frame_to_avframe(FrameConverterCtx *ctx, AVCodecContext *codec_ctx,
                               NDIlib_audio_frame_v2_t *in_frame)

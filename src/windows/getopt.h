@@ -1,162 +1,105 @@
-/* Declarations for getopt.
-   Copyright (C) 1989-1994,1996-1999,2001,2003,2004,2009,2010
-   Free Software Foundation, Inc.
-   This file is part of the GNU C Library.
+/* getopt.h - 命令行选项解析器头文件
+   版权所有 (C) 1989-1994,1996-1999,2001,2003,2004,2009,2010
+   自由软件基金会
+   本文件是GNU C库的一部分
 
-   The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
+   GNU C库是自由软件，您可以自由分发和修改它，
+   遵循GNU较宽松公共许可证条款，版本2.1或更高版本。
 
-   The GNU C Library is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, write to the Free
-   Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-   02111-1307 USA.  */
-
+   本库无任何担保，详情请参阅GNU较宽松公共许可证
+   您应该已经收到GNU较宽松公共许可证的副本，
+   如果没有，请写信给自由软件基金会：
+   59 Temple Place, Suite 330, Boston, MA 02111-1307 USA */
 #ifndef _GETOPT_H
 
 #ifndef __need_getopt
-# define _GETOPT_H 1
-#endif
+# define _GETOPT_H 1  // 定义主头文件标记
 
-/* If __GNU_LIBRARY__ is not already defined, either we are being used
-   standalone, or this is the first header included in the source file.
-   If we are being used with glibc, we need to include <features.h>, but
-   that does not exist if we are standalone.  So: if __GNU_LIBRARY__ is
-   not defined, include <ctype.h>, which will pull in <features.h> for us
-   if it's from glibc.  (Why ctype.h?  It's guaranteed to exist and it
-   doesn't flood the namespace with stuff the way some other headers do.)  */
+/* 如果未定义__GNU_LIBRARY__，可能是独立使用或首次包含头文件
+   对于glibc需要包含<features.h>，但独立使用时不存在。
+   因此：如果未定义__GNU_LIBRARY__，包含<ctype.h>，
+   它会为我们引入<features.h>（如果来自glibc）。
+   选择ctype.h是因为它保证存在且不会污染命名空间 */
 #if !defined __GNU_LIBRARY__
-# include <ctype.h>
+# include <ctype.h>  // 用于获取基础定义
 #endif
 
+/* 异常处理宏定义 */
 #ifndef __THROW
 # ifndef __GNUC_PREREQ
-#  define __GNUC_PREREQ(maj, min) (0)
+#  define __GNUC_PREREQ(maj, min) (0)  // GCC版本检查宏
 # endif
 # if defined __cplusplus && __GNUC_PREREQ (2,8)
-#  define __THROW	throw ()
+#  define __THROW	throw ()  // C++异常规范
 # else
-#  define __THROW
+#  define __THROW  // C语言无异常
 # endif
 #endif
 
-#ifdef	__cplusplus
-extern "C" {
-#endif
+/* 全局变量声明 */
 
-/* For communication from `getopt' to the caller.
-   When `getopt' finds an option that takes an argument,
-   the argument value is returned here.
-   Also, when `ordering' is RETURN_IN_ORDER,
-   each non-option ARGV-element is returned here.  */
-
+/* 当前选项的参数值 - 由getopt设置 */
 extern char *optarg;
 
-/* Index in ARGV of the next element to be scanned.
-   This is used for communication to and from the caller
-   and for communication between successive calls to `getopt'.
-
-   On entry to `getopt', zero means this is the first call; initialize.
-
-   When `getopt' returns -1, this is the index of the first of the
-   non-option elements that the caller should itself scan.
-
-   Otherwise, `optind' communicates from one call to the next
-   how much of ARGV has been scanned so far.  */
-
+/* 下一个要扫描的ARGV元素索引
+   - 用于与调用者通信及连续调用间通信
+   - 初始调用时为0表示第一次调用(需要初始化)
+   - 返回-1时表示第一个非选项参数的位置
+   - 其他情况下表示已扫描的进度 */
 extern int optind;
 
-/* Callers store zero here to inhibit the error message `getopt' prints
-   for unrecognized options.  */
-
+/* 是否打印错误信息 (0=不打印未识别选项的错误) */
 extern int opterr;
 
-/* Set to an option character which was unrecognized.  */
-
+/* 未识别的选项字符 */
 extern int optopt;
 
 #ifndef __need_getopt
-/* Describe the long-named options requested by the application.
-   The LONG_OPTIONS argument to getopt_long or getopt_long_only is a vector
-   of `struct option' terminated by an element containing a name which is
-   zero.
-
-   The field `has_arg' is:
-   no_argument		(or 0) if the option does not take an argument,
-   required_argument	(or 1) if the option requires an argument,
-   optional_argument 	(or 2) if the option takes an optional argument.
-
-   If the field `flag' is not NULL, it points to a variable that is set
-   to the value given in the field `val' when the option is found, but
-   left unchanged if the option is not found.
-
-   To have a long-named option do something other than set an `int' to
-   a compiled-in constant, such as set a value from `optarg', set the
-   option's `flag' field to zero and its `val' field to a nonzero
-   value (the equivalent single-letter option character, if there is
-   one).  For long options that have a zero `flag' field, `getopt'
-   returns the contents of the `val' field.  */
+/* 长选项结构定义 - 用于getopt_long和getopt_long_only
+   结构数组以name为NULL的元素结尾 */
 
 struct option
 {
-  const char *name;
-  /* has_arg can't be an enum because some compilers complain about
-     type mismatches in all the code that assumes it is an int.  */
-  int has_arg;
-  int *flag;
-  int val;
+  const char *name;   // 选项长名称
+  int has_arg;        // 是否有参数: 
+                      // 0=无(no_argument), 
+                      // 1=必需(required_argument),
+                      // 2=可选(optional_argument)
+  int *flag;          // 标志变量指针(为NULL时返回val)
+  int val;            // 返回值或设置到flag的值
 };
 
-/* Names for the values of the `has_arg' field of `struct option'.  */
-
-# define no_argument		0
-# define required_argument	1
-# define optional_argument	2
+/* 选项参数类型常量 */
+# define no_argument		0       // 无参数
+# define required_argument	1       // 必需参数
+# define optional_argument	2       // 可选参数
 #endif	/* need getopt */
 
 
-/* Get definitions and prototypes for functions to process the
-   arguments in ARGV (ARGC of them, minus the program name) for
-   options given in OPTS.
+/* 函数功能说明:
+   处理ARGV中的参数(除去程序名)，根据OPTS定义的选项进行解析
 
-   Return the option character from OPTS just read.  Return -1 when
-   there are no more options.  For unrecognized options, or options
-   missing arguments, `optopt' is set to the option letter, and '?' is
-   returned.
+   返回值:
+   - 成功时返回选项字符
+   - 无更多选项时返回-1
+   - 未识别选项或缺少参数时设置optopt并返回'?'
 
-   The OPTS string is a list of characters which are recognized option
-   letters, optionally followed by colons, specifying that that letter
-   takes an argument, to be placed in `optarg'.
+   OPTS格式:
+   - 单字符选项字母
+   - 后跟:表示需要参数
+   - 后跟::表示参数可选(GNU扩展)
+   - --表示选项结束
+   - OPTS以--开头时非选项参数视为'\0'选项的参数(GNU扩展) */
 
-   If a letter in OPTS is followed by two colons, its argument is
-   optional.  This behavior is specific to the GNU `getopt'.
-
-   The argument `--' causes premature termination of argument
-   scanning, explicitly telling `getopt' that there are no more
-   options.
-
-   If OPTS begins with `--', then non-option arguments are treated as
-   arguments to the option '\0'.  This behavior is specific to the GNU
-   `getopt'.  */
-
+/* 函数原型声明 */
 #ifdef __GNU_LIBRARY__
-/* Many other libraries have conflicting prototypes for getopt, with
-   differences in the consts, in stdlib.h.  To avoid compilation
-   errors, only prototype getopt for the GNU C library.  */
+/* 为避免与其他库冲突，仅在GNU C库中声明原型 */
 extern int getopt (int ___argc, char *const *___argv, const char *__shortopts)
        __THROW;
 
 # if defined __need_getopt && defined __USE_POSIX2 \
   && !defined __USE_POSIX_IMPLICITLY && !defined __USE_GNU
-/* The GNU getopt has more functionality than the standard version.  The
-   additional functionality can be disable at runtime.  This redirection
-   helps to also do this at runtime.  */
+/* GNU getopt扩展功能运行时控制 */
 #  ifdef __REDIRECT
   extern int __REDIRECT_NTH (getopt, (int ___argc, char *const *___argv,
 				      const char *__shortopts),
@@ -167,8 +110,8 @@ extern int __posix_getopt (int ___argc, char *const *___argv,
 #   define getopt __posix_getopt
 #  endif
 # endif
-#else /* not __GNU_LIBRARY__ */
-extern int getopt ();
+#else /* 非GNU库 */
+extern int getopt ();  // 标准声明
 #endif /* __GNU_LIBRARY__ */
 
 #ifndef __need_getopt
@@ -187,7 +130,8 @@ extern int getopt_long_only (int ___argc, char *const *___argv,
 }
 #endif
 
-/* Make sure we later can get all the definitions and declarations.  */
+/* 确保后续可以获取所有定义和声明 */
 #undef __need_getopt
 
+#endif /* _GETOPT_H */
 #endif /* getopt.h */

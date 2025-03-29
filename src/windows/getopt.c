@@ -1,30 +1,21 @@
-/* Getopt for GNU.
-NOTE: getopt is now part of the C library, so if you don't know what
-"Keep this file name-space clean" means, talk to drepper@gnu.org
-before changing it!
-Copyright (C) 1987,88,89,90,91,92,93,94,95,96,98,99,2000,2001
-Free Software Foundation, Inc.
-This file is part of the GNU C Library.
+/* getopt.c - GNU命令行选项解析器实现
+   注意：getopt现在是C库的一部分，修改前请确保理解
+   "保持文件命名空间清洁"的含义
+   版权所有 (C) 1987-2001 自由软件基金会
+   本文件是GNU C库的一部分
 
-The GNU C Library is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
+GNU C库是自由软件，您可以自由分发和修改它，
+遵循GNU较宽松公共许可证条款，版本2.1或更高版本。
 
-The GNU C Library is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-Lesser General Public License for more details.
+本库无任何担保，详情请参阅GNU较宽松公共许可证
+您应该已经收到GNU较宽松公共许可证的副本，
+如果没有，请写信给自由软件基金会：
+59 Temple Place, Suite 330, Boston, MA 02111-1307 USA */
 
-You should have received a copy of the GNU Lesser General Public
-License along with the GNU C Library; if not, write to the Free
-Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-02111-1307 USA.  */
-
-/* This tells Alpha OSF/1 not to define a getopt prototype in <stdio.h>.
-Ditto for AIX 3.2 and <stdlib.h>.  */
+/* 防止Alpha OSF/1和AIX 3.2在<stdio.h>/<stdlib.h>中
+定义getopt原型 */
 #ifndef _NO_PROTO
-# define _NO_PROTO
+# define _NO_PROTO  // 禁用原型定义
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -107,53 +98,36 @@ they can distinguish the relative order of options and other arguments.  */
 
 #include "getopt.h"
 
-/* For communication from `getopt' to the caller.
-When `getopt' finds an option that takes an argument,
-the argument value is returned here.
-Also, when `ordering' is RETURN_IN_ORDER,
-each non-option ARGV-element is returned here.  */
+/* 全局变量声明 */
 
+/* optarg - 存储选项参数的指针
+   - 当getopt找到一个带参数的选项时，参数值存储在这里
+   - 当ordering为RETURN_IN_ORDER时，非选项参数也存储在这里 */
 char *optarg;
 
-/* Index in ARGV of the next element to be scanned.
-This is used for communication to and from the caller
-and for communication between successive calls to `getopt'.
-
-On entry to `getopt', zero means this is the first call; initialize.
-
-When `getopt' returns -1, this is the index of the first of the
-non-option elements that the caller should itself scan.
-
-Otherwise, `optind' communicates from one call to the next
-how much of ARGV has been scanned so far.  */
-
-/* 1003.2 says this must be 1 before any call.  */
+/* optind - 下一个要扫描的ARGV元素索引
+   - 用于与调用者通信及连续调用间通信
+   - 初始调用时为0表示第一次调用(需要初始化)
+   - 返回-1时表示第一个非选项参数的位置
+   - 其他情况下表示已扫描的进度
+   - 根据POSIX 1003.2标准，首次调用前必须初始化为1 */
 int optind = 1;
 
-/* Formerly, initialization of getopt depended on optind==0, which
-causes problems with re-calling getopt as programs generally don't
-know that. */
-
+/* getopt初始化标志
+   早期版本依赖optind==0进行初始化，但这会导致重调用问题 */
 int __getopt_initialized;
 
-/* The next char to be scanned in the option-element
-in which the last option character we returned was found.
-This allows us to pick up the scan where we left off.
-
-If this is zero, or a null string, it means resume the scan
-by advancing to the next ARGV-element.  */
-
+/* nextchar - 指向当前选项元素中下一个要扫描的字符
+   - 允许从上一次停止的位置继续扫描
+   - 如果为NULL或空字符串，则前进到下一个ARGV元素 */
 static char *nextchar;
 
-/* Callers store zero here to inhibit the error message
-for unrecognized options.  */
-
+/* opterr - 是否打印错误信息标志
+   - 调用者可设为0来禁止打印未识别选项的错误 */
 int opterr = 1;
 
-/* Set to an option character which was unrecognized.
-This must be initialized on some systems to avoid linking in the
-system's own getopt implementation.  */
-
+/* optopt - 存储未识别的选项字符
+   - 在某些系统上必须初始化为'?'以避免链接系统自带的getopt实现 */
 int optopt = '?';
 
 /* Describe how to deal with options that follow non-option ARGV-elements.
@@ -286,14 +260,10 @@ if (nonoption_flags_len > 0)						      \
 # define SWAP_FLAGS(ch1, ch2)
 #endif	/* _LIBC */
 
-/* Exchange two adjacent subsequences of ARGV.
-One subsequence is elements [first_nonopt,last_nonopt)
-which contains all the non-options that have been skipped so far.
-The other is elements [last_nonopt,optind), which contains all
-the options processed since those non-options were skipped.
-
-`first_nonopt' and `last_nonopt' are relocated so that they describe
-the new indices of the non-options in ARGV after they are moved.  */
+/* 交换ARGV中两个相邻子序列
+   一个子序列是[first_nonopt,last_nonopt) - 已跳过的非选项参数
+   另一个是[last_nonopt,optind) - 已处理的选项参数
+   交换后更新first_nonopt和last_nonopt指向新的非选项参数位置 */
 
 #if defined __STDC__ && __STDC__
 static void exchange(char **);
@@ -303,24 +273,21 @@ static void
 exchange(argv)
 char **argv;
 {
-	int bottom = first_nonopt;
-	int middle = last_nonopt;
-	int top = optind;
+	int bottom = first_nonopt;  // 非选项参数起始位置
+	int middle = last_nonopt;   // 非选项参数结束位置
+	int top = optind;           // 当前扫描位置
 	char *tem;
 
-	/* Exchange the shorter segment with the far end of the longer segment.
-	That puts the shorter segment into the right place.
-	It leaves the longer segment in the right place overall,
-	but it consists of two parts that need to be swapped next.  */
+	/* 将较短的段与较长段的远端交换
+	   这样可以将较短段放到正确位置
+	   较长段整体位置正确但内部需要进一步交换 */
 
 #if defined _LIBC && defined USE_NONOPTION_FLAGS
-	/* First make sure the handling of the `__getopt_nonoption_flags'
-	string can work normally.  Our top argument must be in the range
-	of the string.  */
+	/* 确保__getopt_nonoption_flags字符串处理能正常工作
+	   我们的top参数必须在字符串范围内 */
 	if (nonoption_flags_len > 0 && top >= nonoption_flags_max_len)
 	{
-		/* We must extend the array.  The user plays games with us and
-		presents new arguments.  */
+		/* 需要扩展数组 - 用户可能添加了新参数 */
 		char *new_str = malloc(top + 1);
 		if (new_str == NULL)
 			nonoption_flags_len = nonoption_flags_max_len = 0;
@@ -339,11 +306,11 @@ char **argv;
 	{
 		if (top - middle > middle - bottom)
 		{
-			/* Bottom segment is the short one.  */
+			/* 底部段较短 */
 			int len = middle - bottom;
 			register int i;
 
-			/* Swap it with the top part of the top segment.  */
+			/* 将其与顶部段的上部交换 */
 			for (i = 0; i < len; i++)
 			{
 				tem = argv[bottom + i];
@@ -351,16 +318,16 @@ char **argv;
 				argv[top - (middle - bottom) + i] = tem;
 				SWAP_FLAGS(bottom + i, top - (middle - bottom) + i);
 			}
-			/* Exclude the moved bottom segment from further swapping.  */
+			/* 将已移动的底部段排除在后续交换外 */
 			top -= len;
 		}
 		else
 		{
-			/* Top segment is the short one.  */
+			/* 顶部段较短 */
 			int len = top - middle;
 			register int i;
 
-			/* Swap it with the bottom part of the bottom segment.  */
+			/* 将其与底部段的下部交换 */
 			for (i = 0; i < len; i++)
 			{
 				tem = argv[bottom + i];
@@ -368,18 +335,17 @@ char **argv;
 				argv[middle + i] = tem;
 				SWAP_FLAGS(bottom + i, middle + i);
 			}
-			/* Exclude the moved top segment from further swapping.  */
+			/* 将已移动的顶部段排除在后续交换外 */
 			bottom += len;
 		}
 	}
 
-	/* Update records for the slots the non-options now occupy.  */
-
+	/* 更新非选项参数的新位置记录 */
 	first_nonopt += (optind - last_nonopt);
 	last_nonopt = optind;
 }
 
-/* Initialize the internal data when the first call is made.  */
+/* 第一次调用时初始化内部数据 */
 
 #if defined __STDC__ && __STDC__
 static const char *_getopt_initialize(int, char *const *, const char *);
@@ -390,9 +356,8 @@ int argc;
 char *const *argv;
 const char *optstring;
 {
-	/* Start processing options with ARGV-element 1 (since ARGV-element 0
-	is the program name); the sequence of previously skipped
-	non-option ARGV-elements is empty.  */
+	/* 从ARGV元素1开始处理选项(元素0是程序名)
+	   之前跳过的非选项ARGV元素序列为空 */
 
 	first_nonopt = last_nonopt = optind;
 
@@ -400,24 +365,24 @@ const char *optstring;
 
 	posixly_correct = getenv("POSIXLY_CORRECT");
 
-	/* Determine how to handle the ordering of options and nonoptions.  */
-
+	/* 确定如何处理选项和非选项的顺序 */
 	if (optstring[0] == '-')
 	{
-		ordering = RETURN_IN_ORDER;
+		ordering = RETURN_IN_ORDER;  // 按原始顺序返回
 		++optstring;
 	}
 	else if (optstring[0] == '+')
 	{
-		ordering = REQUIRE_ORDER;
+		ordering = REQUIRE_ORDER;    // 严格顺序(选项必须在非选项前)
 		++optstring;
 	}
 	else if (posixly_correct != NULL)
 		ordering = REQUIRE_ORDER;
 	else
-		ordering = PERMUTE;
+		ordering = PERMUTE;         // 默认: 置换顺序(选项可与非选项混合)
 
 #if defined _LIBC && defined USE_NONOPTION_FLAGS
+	/* 处理非选项标志的特殊逻辑 */
 	if (posixly_correct == NULL
 		&& argc == __libc_argc && argv == __libc_argv)
 	{
@@ -506,6 +471,17 @@ recent call.
 If LONG_ONLY is nonzero, '-' as well as '--' can introduce
 long-named options.  */
 
+/* getopt核心实现函数
+   参数:
+   - argc/argv: 命令行参数
+   - optstring: 合法选项字符串
+   - longopts: 长选项结构体数组
+   - longind: 返回找到的长选项索引
+   - long_only: 是否允许'-'开头长选项
+   返回值:
+   - 选项字符
+   - '?' 表示无效选项
+   - -1 表示选项处理结束 */
 int
 _getopt_internal(argc, argv, optstring, longopts, longind, long_only)
 int argc;
@@ -515,110 +491,304 @@ const struct option *longopts;
 int *longind;
 int long_only;
 {
-	int print_errors = opterr;
-	if (optstring[0] == ':')
+	int print_errors = opterr;  // 是否打印错误信息
+	if (optstring[0] == ':')   // 以':'开头表示静默模式
 		print_errors = 0;
 
-	if (argc < 1)
+	if (argc < 1)  // 无参数直接返回结束
 		return -1;
 
-	optarg = NULL;
+	optarg = NULL;  // 重置选项参数指针
 
+	// 初始化处理
 	if (optind == 0 || !__getopt_initialized)
 	{
 		if (optind == 0)
-			optind = 1;	/* Don't scan ARGV[0], the program name.  */
+			optind = 1;	// 跳过ARGV[0](程序名)
 		optstring = _getopt_initialize(argc, argv, optstring);
 		__getopt_initialized = 1;
 	}
 
-	/* Test whether ARGV[optind] points to a non-option argument.
-	Either it does not have option syntax, or there is an environment flag
-	from the shell indicating it is not an option.  The later information
-	is only used when the used in the GNU libc.  */
+	// 检查当前ARGV元素是否为非选项参数
 #if defined _LIBC && defined USE_NONOPTION_FLAGS
-# define NONOPTION_P (argv[optind][0] != '-' || argv[optind][1] == '\0'	      \
-	|| (optind < nonoption_flags_len			      \
-	&& __getopt_nonoption_flags[optind] == '1'))
+# define NONOPTION_P (argv[optind][0] != '-' || argv[optind][1] == '\0' \
+	|| (optind < nonoption_flags_len && __getopt_nonoption_flags[optind] == '1'))
 #else
 # define NONOPTION_P (argv[optind][0] != '-' || argv[optind][1] == '\0')
 #endif
 
+	// 需要前进到下一个ARGV元素的情况
 	if (nextchar == NULL || *nextchar == '\0')
 	{
-		/* Advance to the next ARGV-element.  */
-
-		/* Give FIRST_NONOPT & LAST_NONOPT rational values if OPTIND has been
-		moved back by the user (who may also have changed the arguments).  */
+		// 确保first_nonopt和last_nonopt值合理
 		if (last_nonopt > optind)
 			last_nonopt = optind;
 		if (first_nonopt > optind)
 			first_nonopt = optind;
 
+		// 处理参数置换逻辑
 		if (ordering == PERMUTE)
 		{
-			/* If we have just processed some options following some non-options,
-			exchange them so that the options come first.  */
-
+			// 将选项移到非选项前面
 			if (first_nonopt != last_nonopt && last_nonopt != optind)
 				exchange((char **)argv);
 			else if (last_nonopt != optind)
 				first_nonopt = optind;
 
-			/* Skip any additional non-options
-			and extend the range of non-options previously skipped.  */
-
+			// 跳过连续的非选项参数
 			while (optind < argc && NONOPTION_P)
 				optind++;
 			last_nonopt = optind;
 		}
 
-		/* The special ARGV-element `--' means premature end of options.
-		Skip it like a null option,
-		then exchange with previous non-options as if it were an option,
-		then skip everything else like a non-option.  */
-
+		// 处理"--"特殊参数(结束选项解析)
 		if (optind != argc && !strcmp(argv[optind], "--"))
 		{
 			optind++;
-
 			if (first_nonopt != last_nonopt && last_nonopt != optind)
 				exchange((char **)argv);
 			else if (first_nonopt == last_nonopt)
 				first_nonopt = optind;
 			last_nonopt = argc;
-
 			optind = argc;
 		}
 
-		/* If we have done all the ARGV-elements, stop the scan
-		and back over any non-options that we skipped and permuted.  */
-
+		// 所有参数处理完成
 		if (optind == argc)
 		{
-			/* Set the next-arg-index to point at the non-options
-			that we previously skipped, so the caller will digest them.  */
 			if (first_nonopt != last_nonopt)
 				optind = first_nonopt;
 			return -1;
 		}
 
-		/* If we have come to a non-option and did not permute it,
-		either stop the scan or describe it to the caller and pass it by.  */
-
+		// 遇到非选项参数时的处理
 		if (NONOPTION_P)
 		{
 			if (ordering == REQUIRE_ORDER)
 				return -1;
 			optarg = argv[optind++];
-			return 1;
+			return 1;  // 返回1表示非选项参数
 		}
 
-		/* We have found another option-ARGV-element.
-		Skip the initial punctuation.  */
+		// 找到新的选项参数，跳过开头的'-'或'--'
+		nextchar = (argv[optind] + 1 + (longopts != NULL && argv[optind][1] == '-'));
+	}
 
-		nextchar = (argv[optind] + 1
-			+ (longopts != NULL && argv[optind][1] == '-'));
+	// 解析当前选项ARGV元素
+	// 首先检查是否为长选项(--option或-long)
+	if (longopts != NULL && (argv[optind][1] == '-' || 
+		(long_only && (argv[optind][2] || !my_index(optstring, argv[optind][1])))))
+	{
+		char *nameend;
+		const struct option *p;
+		const struct option *pfound = NULL;
+		int exact = 0;    // 是否精确匹配
+		int ambig = 0;    // 是否模糊匹配
+		int indfound = -1;
+		int option_index;
+
+		// 获取选项名(到'='或字符串结尾)
+		for (nameend = nextchar; *nameend && *nameend != '='; nameend++)
+			/* Do nothing.  */;
+
+		// 在所有长选项中查找匹配项
+		for (p = longopts, option_index = 0; p->name; p++, option_index++)
+		if (!strncmp(p->name, nextchar, nameend - nextchar))
+		{
+			if ((unsigned int)(nameend - nextchar) == (unsigned int)strlen(p->name))
+			{
+				// 找到精确匹配
+				pfound = p;
+				indfound = option_index;
+				exact = 1;
+				break;
+			}
+			else if (pfound == NULL)
+			{
+				// 第一个非精确匹配
+				pfound = p;
+				indfound = option_index;
+			}
+			else if (long_only
+				|| pfound->has_arg != p->has_arg
+				|| pfound->flag != p->flag
+				|| pfound->val != p->val)
+				// 第二个或更多非精确匹配
+				ambig = 1;
+		}
+
+		// 处理模糊匹配错误
+		if (ambig && !exact)
+		{
+			if (print_errors)
+			{
+#if defined _LIBC && defined USE_IN_LIBIO
+				char *buf;
+				__asprintf(&buf, _("%s: option `%s' is ambiguous\n"),
+					argv[0], argv[optind]);
+
+				if (_IO_fwide(stderr, 0) > 0)
+					__fwprintf(stderr, L"%s", buf);
+				else
+					fputs(buf, stderr);
+
+				free(buf);
+#else
+				fprintf(stderr, _("%s: option `%s' is ambiguous\n"),
+					argv[0], argv[optind]);
+#endif
+			}
+			nextchar += strlen(nextchar);
+			optind++;
+			optopt = 0;
+			return '?';
+		}
+
+		// 处理找到的长选项
+		if (pfound != NULL)
+		{
+			option_index = indfound;
+			optind++;
+			if (*nameend)
+			{
+				// 处理带'='的参数
+				if (pfound->has_arg)
+					optarg = nameend + 1;
+				else
+				{
+					// 选项不允许参数但提供了参数
+					if (print_errors)
+					{
+#if defined _LIBC && defined USE_IN_LIBIO
+						char *buf;
+#endif
+						if (argv[optind - 1][1] == '-')
+						{
+							// --option格式
+#if defined _LIBC && defined USE_IN_LIBIO
+							__asprintf(&buf, _("%s: option `--%s' doesn't allow an argument\n"),
+								argv[0], pfound->name);
+#else
+							fprintf(stderr, _("%s: option `--%s' doesn't allow an argument\n"),
+								argv[0], pfound->name);
+#endif
+						}
+						else
+						{
+							// +option或-option格式
+#if defined _LIBC && defined USE_IN_LIBIO
+							__asprintf(&buf, _("%s: option `%c%s' doesn't allow an argument\n"),
+								argv[0], argv[optind - 1][0], pfound->name);
+#else
+							fprintf(stderr, _("%s: option `%c%s' doesn't allow an argument\n"),
+								argv[0], argv[optind - 1][0], pfound->name);
+#endif
+						}
+
+#if defined _LIBC && defined USE_IN_LIBIO
+						if (_IO_fwide(stderr, 0) > 0)
+							__fwprintf(stderr, L"%s", buf);
+						else
+							fputs(buf, stderr);
+
+						free(buf);
+#endif
+					}
+
+					nextchar += strlen(nextchar);
+					optopt = pfound->val;
+					return '?';
+				}
+			}
+			else if (pfound->has_arg == 1)
+			{
+				// 选项需要参数但未提供
+				if (optind < argc)
+					optarg = argv[optind++];
+				else
+				{
+					if (print_errors)
+					{
+#if defined _LIBC && defined USE_IN_LIBIO
+						char *buf;
+						__asprintf(&buf, _("%s: option `%s' requires an argument\n"),
+							argv[0], argv[optind - 1]);
+
+						if (_IO_fwide(stderr, 0) > 0)
+							__fwprintf(stderr, L"%s", buf);
+						else
+							fputs(buf, stderr);
+
+						free(buf);
+#else
+						fprintf(stderr, _("%s: option `%s' requires an argument\n"),
+							argv[0], argv[optind - 1]);
+#endif
+					}
+					nextchar += strlen(nextchar);
+					optopt = pfound->val;
+					return optstring[0] == ':' ? ':' : '?';
+				}
+			}
+			nextchar += strlen(nextchar);
+			if (longind != NULL)
+				*longind = option_index;
+			if (pfound->flag)
+			{
+				// 选项有flag字段，设置flag值
+				*(pfound->flag) = pfound->val;
+				return 0;
+			}
+			return pfound->val;
+		}
+
+		// 不是长选项，检查是否是短选项
+		if (!long_only || argv[optind][1] == '-'
+			|| my_index(optstring, *nextchar) == NULL)
+		{
+			// 无效选项处理
+			if (print_errors)
+			{
+#if defined _LIBC && defined USE_IN_LIBIO
+				char *buf;
+#endif
+				if (argv[optind][1] == '-')
+				{
+					// --option格式
+#if defined _LIBC && defined USE_IN_LIBIO
+					__asprintf(&buf, _("%s: unrecognized option `--%s'\n"),
+						argv[0], nextchar);
+#else
+					fprintf(stderr, _("%s: unrecognized option `--%s'\n"),
+						argv[0], nextchar);
+#endif
+				}
+				else
+				{
+					// +option或-option格式
+#if defined _LIBC && defined USE_IN_LIBIO
+					__asprintf(&buf, _("%s: unrecognized option `%c%s'\n"),
+						argv[0], argv[optind][0], nextchar);
+#else
+					fprintf(stderr, _("%s: unrecognized option `%c%s'\n"),
+						argv[0], argv[optind][0], nextchar);
+#endif
+				}
+
+#if defined _LIBC && defined USE_IN_LIBIO
+				if (_IO_fwide(stderr, 0) > 0)
+					__fwprintf(stderr, L"%s", buf);
+				else
+					fputs(buf, stderr);
+
+				free(buf);
+#endif
+			}
+			nextchar = (char *) "";
+			optind++;
+			optopt = 0;
+			return '?';
+		}
 	}
 
 	/* Decode the current option-ARGV-element.  */
@@ -863,16 +1033,16 @@ int long_only;
 		}
 	}
 
-	/* Look at and handle the next short option-character.  */
-
+	// 处理短选项(-a, -b等)
 	{
-		char c = *nextchar++;
-		char *temp = my_index(optstring, c);
+		char c = *nextchar++;  // 获取当前选项字符
+		char *temp = my_index(optstring, c);  // 在optstring中查找选项
 
-		/* Increment `optind' when we start to process its last character.  */
+		// 如果这是当前ARGV元素的最后一个字符，前进到下一个ARGV元素
 		if (*nextchar == '\0')
 			++optind;
 
+		// 无效选项处理
 		if (temp == NULL || c == ':')
 		{
 			if (print_errors)
@@ -880,10 +1050,9 @@ int long_only;
 #if defined _LIBC && defined USE_IN_LIBIO
 				char *buf;
 #endif
-
 				if (posixly_correct)
 				{
-					/* 1003.2 specifies the format of this message.  */
+					// POSIX标准错误格式
 #if defined _LIBC && defined USE_IN_LIBIO
 					__asprintf(&buf, _("%s: illegal option -- %c\n"),
 						argv[0], c);
@@ -893,6 +1062,7 @@ int long_only;
 				}
 				else
 				{
+					// GNU扩展错误格式
 #if defined _LIBC && defined USE_IN_LIBIO
 					__asprintf(&buf, _("%s: invalid option -- %c\n"),
 						argv[0], c);
@@ -913,7 +1083,7 @@ int long_only;
 			optopt = c;
 			return '?';
 		}
-		/* Convenience. Treat POSIX -W foo same as long option --foo */
+		// 特殊处理POSIX -W选项(等同于长选项--)
 		if (temp[0] == 'W' && temp[1] == ';')
 		{
 			char *nameend;
@@ -924,22 +1094,18 @@ int long_only;
 			int indfound = 0;
 			int option_index;
 
-			/* This is an option that requires an argument.  */
+			// 处理-W选项的参数
 			if (*nextchar != '\0')
 			{
 				optarg = nextchar;
-				/* If we end this ARGV-element by taking the rest as an arg,
-				we must advance to the next element now.  */
 				optind++;
 			}
 			else if (optind == argc)
 			{
 				if (print_errors)
 				{
-					/* 1003.2 specifies the format of this message.  */
 #if defined _LIBC && defined USE_IN_LIBIO
 					char *buf;
-
 					__asprintf(&buf, _("%s: option requires an argument -- %c\n"),
 						argv[0], c);
 
@@ -962,24 +1128,17 @@ int long_only;
 				return c;
 			}
 			else
-				/* We already incremented `optind' once;
-				increment it again when taking next ARGV-elt as argument.  */
 				optarg = argv[optind++];
 
-			/* optarg is now the argument, see if it's in the
-			table of longopts.  */
-
+			// 在长选项表中查找匹配项
 			for (nextchar = nameend = optarg; *nameend && *nameend != '='; nameend++)
 				/* Do nothing.  */;
 
-			/* Test all long options for either exact match
-			or abbreviated matches.  */
 			for (p = longopts, option_index = 0; p->name; p++, option_index++)
 			if (!strncmp(p->name, nextchar, nameend - nextchar))
 			{
 				if ((unsigned int)(nameend - nextchar) == strlen(p->name))
 				{
-					/* Exact match found.  */
 					pfound = p;
 					indfound = option_index;
 					exact = 1;
@@ -987,21 +1146,19 @@ int long_only;
 				}
 				else if (pfound == NULL)
 				{
-					/* First nonexact match found.  */
 					pfound = p;
 					indfound = option_index;
 				}
 				else
-					/* Second or later nonexact match found.  */
 					ambig = 1;
 			}
+
 			if (ambig && !exact)
 			{
 				if (print_errors)
 				{
 #if defined _LIBC && defined USE_IN_LIBIO
 					char *buf;
-
 					__asprintf(&buf, _("%s: option `-W %s' is ambiguous\n"),
 						argv[0], argv[optind]);
 
@@ -1020,13 +1177,12 @@ int long_only;
 				optind++;
 				return '?';
 			}
+
 			if (pfound != NULL)
 			{
 				option_index = indfound;
 				if (*nameend)
 				{
-					/* Don't test has_arg with >, because some C compilers don't
-					allow it to be used on enums.  */
 					if (pfound->has_arg)
 						optarg = nameend + 1;
 					else
@@ -1035,10 +1191,8 @@ int long_only;
 						{
 #if defined _LIBC && defined USE_IN_LIBIO
 							char *buf;
-
-							__asprintf(&buf, _("\
-											   %s: option `-W %s' doesn't allow an argument\n"),
-											   argv[0], pfound->name);
+							__asprintf(&buf, _("%s: option `-W %s' doesn't allow an argument\n"),
+								argv[0], pfound->name);
 
 							if (_IO_fwide(stderr, 0) > 0)
 								__fwprintf(stderr, L"%s", buf);
@@ -1047,12 +1201,10 @@ int long_only;
 
 							free(buf);
 #else
-							fprintf(stderr, _("\
-											  %s: option `-W %s' doesn't allow an argument\n"),
-											  argv[0], pfound->name);
+							fprintf(stderr, _("%s: option `-W %s' doesn't allow an argument\n"),
+								argv[0], pfound->name);
 #endif
 						}
-
 						nextchar += strlen(nextchar);
 						return '?';
 					}
@@ -1067,10 +1219,8 @@ int long_only;
 						{
 #if defined _LIBC && defined USE_IN_LIBIO
 							char *buf;
-
-							__asprintf(&buf, _("\
-											   %s: option `%s' requires an argument\n"),
-											   argv[0], argv[optind - 1]);
+							__asprintf(&buf, _("%s: option `%s' requires an argument\n"),
+								argv[0], argv[optind - 1]);
 
 							if (_IO_fwide(stderr, 0) > 0)
 								__fwprintf(stderr, L"%s", buf);
@@ -1079,8 +1229,7 @@ int long_only;
 
 							free(buf);
 #else
-							fprintf(stderr,
-								_("%s: option `%s' requires an argument\n"),
+							fprintf(stderr, _("%s: option `%s' requires an argument\n"),
 								argv[0], argv[optind - 1]);
 #endif
 						}
@@ -1099,13 +1248,14 @@ int long_only;
 				return pfound->val;
 			}
 			nextchar = NULL;
-			return 'W';	/* Let the application handle it.   */
+			return 'W';	// 让应用程序处理
 		}
+		// 处理带参数的选项
 		if (temp[1] == ':')
 		{
 			if (temp[2] == ':')
 			{
-				/* This is an option that accepts an argument optionally.  */
+				// 可选参数选项
 				if (*nextchar != '\0')
 				{
 					optarg = nextchar;
@@ -1117,24 +1267,19 @@ int long_only;
 			}
 			else
 			{
-				/* This is an option that requires an argument.  */
+				// 必需参数选项
 				if (*nextchar != '\0')
 				{
 					optarg = nextchar;
-					/* If we end this ARGV-element by taking the rest as an arg,
-					we must advance to the next element now.  */
 					optind++;
 				}
 				else if (optind == argc)
 				{
 					if (print_errors)
 					{
-						/* 1003.2 specifies the format of this message.  */
 #if defined _LIBC && defined USE_IN_LIBIO
 						char *buf;
-
-						__asprintf(&buf,
-							_("%s: option requires an argument -- %c\n"),
+						__asprintf(&buf, _("%s: option requires an argument -- %c\n"),
 							argv[0], c);
 
 						if (_IO_fwide(stderr, 0) > 0)
@@ -1144,8 +1289,7 @@ int long_only;
 
 						free(buf);
 #else
-						fprintf(stderr,
-							_("%s: option requires an argument -- %c\n"),
+						fprintf(stderr, _("%s: option requires an argument -- %c\n"),
 							argv[0], c);
 #endif
 					}
@@ -1156,8 +1300,6 @@ int long_only;
 						c = '?';
 				}
 				else
-					/* We already incremented `optind' once;
-					increment it again when taking next ARGV-elt as argument.  */
 					optarg = argv[optind++];
 				nextchar = NULL;
 			}

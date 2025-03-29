@@ -8,6 +8,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavutil/channel_layout.h>
+#include <string.h>
 
 #include "common.h"
 
@@ -44,7 +45,6 @@ ffmpeg_output_init(FFmpegOutputCtx *ctx, const char *format, const char *output)
                      "could not allocate output format context!", ret);
     }
     else if (!(ctx->o_ctx->oformat->flags & (int)AVFMT_NOFILE)) {
-
         ret = avio_open2(&ctx->o_ctx->pb, output, AVIO_FLAG_WRITE, NULL, NULL);
         if (ret < 0) {
             av_error_fmt(ctx->error_str, "could not open output IO context!",
@@ -89,17 +89,25 @@ ffmpeg_output_setup_video(FFmpegOutputCtx *ctx, const char *encoder_name,
         sprintf(ctx->error_str, "%s", "could not find video codec");
         return -1;
     }
+
+    // 检查是否为VideoToolbox编码器
+    if (strstr(encoder_name, "videotoolbox") != NULL) {
+        printf("[INFO] Using Apple Silicon hardware acceleration with %s\n", encoder_name);
+    }
+
     AVStream *stream = avformat_new_stream(ctx->o_ctx, codec);
     if (!stream) {
         sprintf(ctx->error_str, "%s", "could not create video stream");
         return -1;
     }
+
     ctx->video_stream_index = (int)(ctx->o_ctx->nb_streams) - 1;
     AVCodecContext *c_ctx = avcodec_alloc_context3(codec);
     if (!c_ctx) {
         sprintf(ctx->error_str, "%s", "could not allocate video codec context");
         return -1;
     }
+
     c_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
     c_ctx->time_base.num = 1;
     c_ctx->time_base.den = AV_TIME_BASE;
@@ -115,9 +123,11 @@ ffmpeg_output_setup_video(FFmpegOutputCtx *ctx, const char *encoder_name,
     int ret;
     AVDictionary *codec_options = NULL;
 
-    //    av_dict_set(&codec_options, "deadline", "realtime", 0);
-
-    if (strcmp(encoder_name, "libx264") == 0) {
+    // VideoToolbox编码器特定设置
+    if (strstr(encoder_name, "videotoolbox") != NULL) {
+        av_dict_set(&codec_options, "realtime", "1", 0);
+        av_dict_set(&codec_options, "allow_sw", "0", 0);
+    } else if (strcmp(encoder_name, "libx264") == 0) {
         av_dict_set(&codec_options, "preset", "veryfast", 0);
     }
 
@@ -130,8 +140,7 @@ ffmpeg_output_setup_video(FFmpegOutputCtx *ctx, const char *encoder_name,
         av_error_fmt(ctx->error_str, "could not open video codec!", ret);
         avcodec_free_context(&c_ctx);
     }
-    else if ((ret = avcodec_parameters_from_context(stream->codecpar, c_ctx))
-             < 0) {
+    else if ((ret = avcodec_parameters_from_context(stream->codecpar, c_ctx)) < 0) {
         av_error_fmt(ctx->error_str,
                      "could not initialize video stream codec parameters!",
                      ret);
@@ -170,92 +179,20 @@ ffmpeg_output_setup_audio(FFmpegOutputCtx *ctx, char *encoder_name,
     c_ctx->time_base.num = 1;
     c_ctx->time_base.den = AV_TIME_BASE;
     c_ctx->codec_type = AVMEDIA_TYPE_AUDIO;
-
-    const int *supported_samplerates = NULL;
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 13, 100)
-    supported_samplerates = codec->supported_samplerates;
-#else
-    avcodec_get_supported_config(c_ctx, codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0,
-                                 (const void **)&supported_samplerates, NULL);
-#endif
-
-    if (supported_samplerates != NULL) {
-        int s_rate = 0;
-        for (int i = 0; supported_samplerates[i] != 0; ++i) {
-            if (supported_samplerates[i] == 48000) {
-                s_rate = 48000;
-                break;
-            }
-        }
-        if (s_rate == 0) {
-            s_rate = supported_samplerates[0];
-        }
-        c_ctx->sample_rate = s_rate;
-    }
-    else {
-        c_ctx->sample_rate = 48000;
-    }
-
-    const AVChannelLayout *ch_layouts = NULL;
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 13, 100)
-    ch_layouts = codec->ch_layouts;
-#else
-    avcodec_get_supported_config(c_ctx, codec, AV_CODEC_CONFIG_CHANNEL_LAYOUT,
-                                 0, (const void **)&ch_layouts, NULL);
-#endif
-
-    if (ch_layouts != NULL) {
-        AVChannelLayout ch_layout = {};
-        for (int i = 0; ch_layouts[i].nb_channels != 0; ++i) {
-            ch_layout = ch_layouts[i];
-            if (ch_layout.nb_channels == 2
-                && ch_layout.u.mask == AV_CH_LAYOUT_STEREO)
-                break;
-        }
-        c_ctx->ch_layout = ch_layout;
-    }
-    else {
-        AVChannelLayout ch_layout = AV_CHANNEL_LAYOUT_STEREO;
-        c_ctx->ch_layout = ch_layout;
-    }
-
-    const enum AVSampleFormat *sample_fmts = NULL;
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 13, 100)
-    sample_fmts = codec->sample_fmts;
-#else
-    avcodec_get_supported_config(c_ctx, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
-                                 (const void **)&sample_fmts, NULL);
-#endif
-
-    if (sample_fmts != NULL) {
-        enum AVSampleFormat sample_fmt = 0;
-        for (int i = 0; sample_fmts[i] != 0; ++i) {
-            sample_fmt = sample_fmts[i];
-            if (sample_fmt == AV_SAMPLE_FMT_FLTP)
-                break;
-        }
-        if (sample_fmt != AV_SAMPLE_FMT_FLTP) {
-            sample_fmt = sample_fmts[0];
-        }
-        c_ctx->sample_fmt = sample_fmt;
-    }
-
+    c_ctx->sample_rate = 48000;
+    c_ctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
     c_ctx->bit_rate = bitrate;
-
-    AVDictionary *codec_options = NULL;
-
-    // av_dict_set(&codec_options, "frame_duration", "30", 0);
 
     if (ctx->o_ctx->oformat->flags & AVFMT_GLOBALHEADER)
         c_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
     int ret;
+    AVDictionary *codec_options = NULL;
     if ((ret = avcodec_open2(c_ctx, codec, &codec_options)) < 0) {
         av_error_fmt(ctx->error_str, "could not open audio codec!", ret);
         avcodec_free_context(&c_ctx);
     }
-    else if ((ret = avcodec_parameters_from_context(stream->codecpar, c_ctx))
-             < 0) {
+    else if ((ret = avcodec_parameters_from_context(stream->codecpar, c_ctx)) < 0) {
         av_error_fmt(ctx->error_str,
                      "could not initialize audio stream codec parameters!",
                      ret);
@@ -264,6 +201,7 @@ ffmpeg_output_setup_audio(FFmpegOutputCtx *ctx, char *encoder_name,
     else {
         ctx->audio_codec_ctx = c_ctx;
     }
+
     av_dict_free(&codec_options);
     return ret;
 }
@@ -282,10 +220,6 @@ ffmpeg_output_write_header(FFmpegOutputCtx *ctx, AVDictionary **av_opts)
 }
 
 int
-send_packets(const FFmpegOutputCtx *ctx, AVCodecContext *codec_context,
-             int stream_index);
-
-int
 ffmpeg_output_send_video_frame(FFmpegOutputCtx *ctx, AVFrame *frame)
 {
     int ret = avcodec_send_frame(ctx->video_codec_ctx, frame);
@@ -296,7 +230,24 @@ ffmpeg_output_send_video_frame(FFmpegOutputCtx *ctx, AVFrame *frame)
         return ret;
     }
 
-    return send_packets(ctx, ctx->video_codec_ctx, ctx->video_stream_index);
+    AVPacket *pkt = av_packet_alloc();
+    while (ret >= 0) {
+        ret = avcodec_receive_packet(ctx->video_codec_ctx, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            break;
+        }
+        if (ret < 0) {
+            av_error_fmt(ctx->error_str,
+                         "error receiving packet from video codec context!", ret);
+            break;
+        }
+
+        pkt->stream_index = ctx->video_stream_index;
+        ret = av_interleaved_write_frame(ctx->o_ctx, pkt);
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    return ret;
 }
 
 int
@@ -309,48 +260,23 @@ ffmpeg_output_send_audio_frame(FFmpegOutputCtx *ctx, AVFrame *frame)
                      "error sending frame to audio codec context!", ret);
         return ret;
     }
-    return send_packets(ctx, ctx->audio_codec_ctx, ctx->audio_stream_index);
-}
 
-int
-send_packets(const FFmpegOutputCtx *ctx, AVCodecContext *codec_context,
-             const int stream_index)
-{
-    int ret = 0;
     AVPacket *pkt = av_packet_alloc();
-
     while (ret >= 0) {
-        ret = avcodec_receive_packet(codec_context, pkt);
-
+        ret = avcodec_receive_packet(ctx->audio_codec_ctx, pkt);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            av_packet_free(&pkt);
-            return 0;
+            break;
         }
-
         if (ret < 0) {
             av_error_fmt(ctx->error_str,
-                         "error receiving packet from codec context!", ret);
-        }
-        else {
-            pkt->stream_index = stream_index;
-            pkt->pts = av_rescale_q(
-                    pkt->pts, codec_context->time_base,
-                    ctx->o_ctx->streams[stream_index]->time_base);
-            pkt->dts = av_rescale_q(
-                    pkt->dts, codec_context->time_base,
-                    ctx->o_ctx->streams[stream_index]->time_base);
-
-            ret = av_interleaved_write_frame(ctx->o_ctx, pkt);
-            if (ret < 0) {
-                av_error_fmt(ctx->error_str,
-                             "error writing frame to output context!", ret);
-            }
+                         "error receiving packet from audio codec context!", ret);
+            break;
         }
 
+        pkt->stream_index = ctx->audio_stream_index;
+        ret = av_interleaved_write_frame(ctx->o_ctx, pkt);
         av_packet_unref(pkt);
     }
-
     av_packet_free(&pkt);
-
     return ret;
 }
